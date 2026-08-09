@@ -19,10 +19,22 @@ export const adminApi = {
     ),
   deleteProduct: (id: string) =>
     api(`/admin/products/${id}`, { method: "DELETE" }, true),
-  deleteImage: (id: string, storagePath: string) =>
+  deleteImage: (id: string, publicId: string) =>
     api<Product>(
       `/admin/products/${id}/images`,
-      { method: "DELETE", body: JSON.stringify({ storagePath }) },
+      { method: "DELETE", body: JSON.stringify({ publicId }) },
+      true,
+    ),
+  setPrimaryImage: (id: string, publicId: string) =>
+    api<Product>(
+      `/admin/products/${id}/images/primary`,
+      { method: "PATCH", body: JSON.stringify({ publicId }) },
+      true,
+    ),
+  reorderImages: (id: string, publicIds: string[]) =>
+    api<Product>(
+      `/admin/products/${id}/images/order`,
+      { method: "PATCH", body: JSON.stringify({ publicIds }) },
       true,
     ),
   categories: () => api<Category[]>("/admin/categories", {}, true),
@@ -43,9 +55,15 @@ export const adminApi = {
       { method: "PATCH", body: JSON.stringify({ status }) },
       true,
     ),
-  upload: async (id: string, files: File[]) => {
+  upload: async (
+    id: string,
+    files: File[],
+    options: { alt: string; isPrimary: boolean },
+  ) => {
     const b = new FormData();
-    files.forEach((f) => b.append("images", f));
+    files.forEach((file) => b.append("images", file));
+    b.append("alt", options.alt);
+    b.append("isPrimary", String(options.isPrimary));
     return api<Product>(
       `/admin/products/${id}/images`,
       { method: "POST", body: b },

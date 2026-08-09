@@ -24,11 +24,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(
-    () =>
-      onAuthStateChanged(auth, (u) => {
+    () => {
+      if (!auth) {
+        setLoading(false);
+        return;
+      }
+      return onAuthStateChanged(auth, (u) => {
         setUser(u);
         setLoading(false);
-      }),
+      });
+    },
     [],
   );
   return (
@@ -37,9 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         loading,
         login: async (e, p) => {
+          if (!auth)
+            throw new Error("Firebase nije konfigurisan u frontend/.env");
           await signInWithEmailAndPassword(auth, e, p);
         },
-        logout: () => signOut(auth),
+        logout: async () => {
+          if (auth) await signOut(auth);
+        },
       }}
     >
       {children}

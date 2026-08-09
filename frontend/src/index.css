@@ -777,6 +777,13 @@ td small {
 .admin-images > div {
   display: grid;
   gap: 4px;
+  align-content: start;
+  max-width: 150px;
+}
+.admin-images p,
+.admin-images strong {
+  margin: 0;
+  font-size: 0.75rem;
 }
 .admin-images button {
   border: 0;
@@ -784,6 +791,23 @@ td small {
   color: var(--green);
   font-size: 0.7rem;
   cursor: pointer;
+}
+.upload-preview {
+  display: grid;
+  gap: 12px;
+  margin-top: 15px;
+  max-width: 420px;
+}
+.upload-preview-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.upload-preview-images img {
+  width: 180px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 4px;
 }
 .modal-backdrop {
   position: fixed;

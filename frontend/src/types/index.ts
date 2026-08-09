@@ -1,6 +1,6 @@
 export interface ProductImage {
   url: string;
-  storagePath: string;
+  publicId: string;
   alt: string;
   order: number;
   isPrimary: boolean;

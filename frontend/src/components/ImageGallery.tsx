@@ -19,10 +19,10 @@ export function ImageGallery({
         <div className="thumbnails">
           {sorted.map((x) => (
             <button
-              key={x.storagePath}
+              key={x.publicId}
               onClick={() => setActive(x)}
               aria-label={`Prikaži ${x.alt || name}`}
-              className={x.storagePath === active.storagePath ? "active" : ""}
+              className={x.publicId === active.publicId ? "active" : ""}
             >
               <img src={x.url} alt="" />
             </button>

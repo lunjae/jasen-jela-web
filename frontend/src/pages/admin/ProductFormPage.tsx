@@ -25,6 +25,10 @@ export function ProductFormPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [imageAlt, setImageAlt] = useState("");
+  const [uploadAsPrimary, setUploadAsPrimary] = useState(false);
+  const [imageError, setImageError] = useState("");
   const existing = useQuery({
     queryKey: ["admin-product", id],
     queryFn: () => adminApi.product(id!),
@@ -41,19 +45,74 @@ export function ProductFormPage() {
       f.reset(x);
     }
   }, [existing.data, f]);
+  useEffect(() => {
+    if (!files.length) {
+      setPreviews([]);
+      return;
+    }
+    const urls = files.map((file) => URL.createObjectURL(file));
+    setPreviews(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [files]);
+  function selectImages(next: File[]) {
+    upload.reset();
+    setImageError("");
+    if (!next.length) {
+      setFiles([]);
+      return;
+    }
+    if (next.length > 8) {
+      setImageError("Možete izabrati najviše 8 slika odjednom.");
+      setFiles([]);
+      return;
+    }
+    if (next.some((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type))) {
+      setImageError("Dozvoljeni formati su JPG, PNG i WebP.");
+      setFiles([]);
+      return;
+    }
+    if (next.some((file) => file.size > 10 * 1024 * 1024)) {
+      setImageError("Svaka slika može imati najviše 10 MB.");
+      setFiles([]);
+      return;
+    }
+    setFiles(next);
+    if (!imageAlt) setImageAlt(f.getValues("name"));
+  }
   const save = useMutation({
     mutationFn: async (v: Form) => {
-      const p = await adminApi.saveProduct(
-        { ...v, images: existing.data?.images || [] },
-        id,
-      );
-      if (files.length) await adminApi.upload(p.id, files);
-      return p;
+      const p = await adminApi.saveProduct(v, id);
+      return files.length
+        ? adminApi.upload(p.id, files, {
+            alt: imageAlt,
+            isPrimary: uploadAsPrimary,
+          })
+        : p;
     },
     onSuccess: (p) => {
+      setFiles([]);
+      setImageError("");
       qc.invalidateQueries({ queryKey: ["admin-products"] });
       nav(`/admin/proizvodi/${p.id}`, { replace: true });
     },
+  });
+  const upload = useMutation({
+    mutationFn: () => {
+      if (!id || !files.length) throw new Error("Izaberite slike.");
+      return adminApi.upload(id, files, {
+        alt: imageAlt,
+        isPrimary: uploadAsPrimary,
+      });
+    },
+    onSuccess: (product) => {
+      qc.setQueryData(["admin-product", id], product);
+      qc.invalidateQueries({ queryKey: ["admin-products"] });
+      setFiles([]);
+      setImageAlt("");
+      setUploadAsPrimary(false);
+      setImageError("");
+    },
+    onError: () => setImageError("Upload slike nije uspeo."),
   });
   const imageAction = useMutation({
     mutationFn: async (action: {
@@ -63,17 +122,30 @@ export function ProductFormPage() {
       if (!id || !existing.data) throw new Error("Product is not saved");
       if (action.type === "delete")
         return adminApi.deleteImage(id, action.path);
-      const images = existing.data.images.map((image) => ({
-        ...image,
-        isPrimary: image.storagePath === action.path,
-      }));
-      return adminApi.saveProduct({ ...existing.data, images }, id);
+      return adminApi.setPrimaryImage(id, action.path);
     },
     onSuccess: (product) => {
       qc.setQueryData(["admin-product", id], product);
       qc.invalidateQueries({ queryKey: ["admin-products"] });
     },
   });
+  const reorder = useMutation({
+    mutationFn: (publicIds: string[]) => adminApi.reorderImages(id!, publicIds),
+    onSuccess: (product) => {
+      qc.setQueryData(["admin-product", id], product);
+      qc.invalidateQueries({ queryKey: ["admin-products"] });
+    },
+  });
+  const images = [...(existing.data?.images || [])].sort(
+    (a, b) => a.order - b.order,
+  );
+  function moveImage(index: number, offset: number) {
+    const target = index + offset;
+    if (!id || target < 0 || target >= images.length) return;
+    const next = [...images];
+    [next[index], next[target]] = [next[target], next[index]];
+    reorder.mutate(next.map((image) => image.publicId));
+  }
   if (id && existing.isLoading) return <Spinner />;
   return (
     <>
@@ -181,18 +253,20 @@ export function ProductFormPage() {
         </section>
         <section className="admin-panel">
           <h2>Slike</h2>
-          {existing.data?.images.length ? (
+          {images.length ? (
             <div className="admin-images">
-              {existing.data.images.map((x) => (
-                <div key={x.storagePath}>
+              {images.map((x, index) => (
+                <div key={x.publicId}>
                   <img src={x.url} alt={x.alt} />
+                  <p>{x.alt || "Bez alternativnog teksta"}</p>
+                  {x.isPrimary && <strong>Glavna slika</strong>}
                   <button
                     type="button"
                     disabled={x.isPrimary || imageAction.isPending}
                     onClick={() =>
                       imageAction.mutate({
                         type: "primary",
-                        path: x.storagePath,
+                        path: x.publicId,
                       })
                     }
                   >
@@ -205,25 +279,90 @@ export function ProductFormPage() {
                       confirm("Ukloniti ovu sliku?") &&
                       imageAction.mutate({
                         type: "delete",
-                        path: x.storagePath,
+                        path: x.publicId,
                       })
                     }
                   >
                     Ukloni
                   </button>
+                  <button
+                    type="button"
+                    disabled={index === 0 || reorder.isPending}
+                    onClick={() => moveImage(index, -1)}
+                    aria-label="Pomeri sliku ulevo"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    disabled={index === images.length - 1 || reorder.isPending}
+                    onClick={() => moveImage(index, 1)}
+                    aria-label="Pomeri sliku udesno"
+                  >
+                    →
+                  </button>
                 </div>
               ))}
             </div>
           ) : null}
-          <label className="upload">
+          <label
+            className="upload"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              selectImages(Array.from(event.dataTransfer.files));
+            }}
+          >
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
               multiple
-              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+              onChange={(event) => selectImages(Array.from(event.target.files || []))}
             />
-            <span>Izaberite do 8 slika (najviše 5 MB po slici)</span>
+            <span>Izaberite ili prevucite do 8 slika (najviše 10 MB po slici)</span>
           </label>
+          {previews.length > 0 && (
+            <div className="upload-preview">
+              <div className="upload-preview-images">
+                {previews.map((preview, index) => (
+                  <img key={preview} src={preview} alt={`Pregled slike ${index + 1}`} />
+                ))}
+              </div>
+              <label className="field">
+                <span>Alternativni tekst</span>
+                <input
+                  value={imageAlt}
+                  maxLength={200}
+                  onChange={(event) => setImageAlt(event.target.value)}
+                />
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={uploadAsPrimary}
+                  onChange={(event) => setUploadAsPrimary(event.target.checked)}
+                />{" "}
+                Postavi kao glavnu sliku
+              </label>
+              {id && (
+                <Button
+                  type="button"
+                  disabled={upload.isPending}
+                  onClick={() => upload.mutate()}
+                >
+                  {upload.isPending ? "Otpremanje…" : "Otpremi sliku"}
+                </Button>
+              )}
+            </div>
+          )}
+          {!id && files.length > 0 && (
+            <p className="form-note">Slike će biti otpremljene nakon čuvanja proizvoda.</p>
+          )}
+          {imageError && <div className="alert error">{imageError}</div>}
+          {upload.isSuccess && <div className="alert success">Slika je uspešno otpremljena.</div>}
+          {(imageAction.isError || reorder.isError) && (
+            <div className="alert error">Izmena slika nije uspela.</div>
+          )}
         </section>
         <section className="admin-panel publish">
           <label>

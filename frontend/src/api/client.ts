@@ -19,7 +19,7 @@ export async function api<T>(
   if (!(options.body instanceof FormData))
     headers.set("Content-Type", "application/json");
   if (admin) {
-    const token = await auth.currentUser?.getIdToken();
+    const token = await auth?.currentUser?.getIdToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
     else if (import.meta.env.DEV) headers.set("X-Dev-Admin-UID", "local-admin");
   }

@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All application data is accessed through the Go backend. The Firebase
+    // Admin SDK bypasses these client rules after verifying the caller itself.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
